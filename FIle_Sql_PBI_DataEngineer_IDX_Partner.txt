@@ -1,0 +1,153 @@
+--------------- File Sql Sample ---------------
+
+
+use sample
+
+
+SELECT * FROM customer
+SELECT * FROM account
+SELECT * FROM branch
+SELECT * FROM transaction_db
+
+USE sample;
+SELECT COLUMN_NAME, DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'customer';
+
+
+
+
+--------------- File Sql DWH ---------------
+
+
+create database DWH
+
+use DWH
+
+drop database DWH
+
+SELECT * FROM DimCustomer;
+SELECT * FROM DimAccount;
+SELECT * FROM DimBranch;
+SELECT * FROM FactTransaction;
+
+
+-- Tabel DimCustomer
+CREATE TABLE DimCustomer (
+    Customer_Id INT PRIMARY KEY NOT NULL, -- Primary Key
+    Customer_Name VARCHAR(50) NOT NULL,
+    Address VARCHAR(50) NOT NULL,
+    City_Name VARCHAR(50) NOT NULL,
+    State_Name VARCHAR(50) NOT NULL,
+    Age int NOT NULL,
+    Gender VARCHAR(50) NOT NULL,
+    Email VARCHAR(50) NOT NULL
+);
+
+-- Tabel DimAccount
+CREATE TABLE DimAccount (
+    Account_Id INT PRIMARY KEY NOT NULL, -- Primary Key
+    Customer_Id INT NOT NULL, -- Foreign Key ke DimCustomer
+    Account_Type VARCHAR(50) NOT NULL,
+    Balance INT NOT NULL,
+    Date_Opened DATETIME NOT NULL,
+    Status VARCHAR(50) NOT NULL,
+	FOREIGN KEY (Customer_id) REFERENCES DimCustomer(Customer_Id)
+	
+);
+
+-- Tabel DimBranch
+CREATE TABLE DimBranch (
+    Branch_Id INT PRIMARY KEY NOT NULL, -- Primary Key
+    Branch_Name VARCHAR(50) NOT NULL,
+    Branch_Location VARCHAR(50) NOT NULL
+);
+
+-- Tabel FactTransaction
+CREATE TABLE FactTransaction (
+    Transaction_Id INT PRIMARY KEY NOT NULL, -- Primary Key
+    Account_Id INT NOT NULL, -- Foreign Key ke DimAccount
+    Transaction_Date DATETIME2 NOT NULL,
+    Amount DECIMAL NOT NULL,
+    Transaction_Type VARCHAR(50) NOT NULL,
+    Branch_Id INT NOT NULL, -- Foreign Key ke DimBranch
+
+	FOREIGN KEY (Account_Id) REFERENCES DimAccount(Account_Id),
+	FOREIGN KEY (Branch_Id) REFERENCES DimBranch(Branch_Id)
+);
+
+
+
+
+
+--------------- Sql PROCEDURE DailyTransaction --------------- 
+
+
+CREATE PROCEDURE DailyTransaction
+    @start_date DATE, -- Parameter input untuk menentukan rentang tanggal yang ingin dihitung.
+    @end_date DATE -- Parameter output untuk menentukan rentang tanggal yang ingin dihitung.
+AS
+BEGIN
+    SELECT 
+        CAST(Transaction_Date AS DATE) AS Date, --Mengubah tipe data transaction_date menjadi DATE untuk hanya menampilkan tanggal tanpa waktu.
+        COUNT(*) AS TotalTransactions, -- Menghitung jumlah total transaksi pada setiap tanggal.
+        SUM(Amount) AS TotalAmount -- Menjumlahkan total nominal transaksi pada setiap tanggal.
+    FROM 
+        FactTransaction
+    WHERE 
+        Transaction_Date BETWEEN @start_date AND @end_date
+    GROUP BY 
+        CAST(Transaction_Date AS DATE) --- Mengelompokkan data berdasarkan tanggal.
+    ORDER BY 
+        Date; -- Mengurutkan hasil berdasarkan tanggal secara ascending.
+END
+
+EXEC DailyTransaction '2024-01-01', '2024-01-31'
+
+
+drop procedure DailyTransaction
+
+
+
+
+
+--------------- PROCEDURE BalancePerCustomer ---------------
+
+
+
+CREATE PROCEDURE BalancePerCustomer
+    @name NVARCHAR(100) -- parameter @name yang digunakan untuk mencari data customer berdasarkan nama.
+AS
+BEGIN
+    SELECT 
+        c.Customer_Name,
+        a.Account_Type,
+        a.Balance,
+        a.Balance + SUM(CASE WHEN t.transaction_type = 'Deposit' 
+		THEN t.Amount ELSE -t.Amount END) AS CurrentBalance
+		-- CASE WHEN digunakan untuk menentukan apakah transaksi merupakan deposit atau penarikan. 
+		-- Jika jenis transaksi adalah Deposit, jumlah uang (t.Amount) menambah saldo akun.
+		-- Jika jenis transaksi bukan Deposit (diasumsikan Withdrawal), jumlah uang (t.Amount) mengurangi saldo akun.
+		-- Jadi nantinya akan digunakan untuk menghitung saldo terkini.
+		
+    FROM 
+        DimAccount a -- INNER JOIN antara tabel DimAccount dan DimCustomer untuk mendapatkan informasi customer.
+    INNER JOIN DimCustomer c ON a.customer_id = c.customer_id
+    LEFT JOIN FactTransaction t ON a.account_id = t.account_id -- LEFT JOIN digunakan agar semua DimAccount tetap ditampilkan.
+
+    WHERE 
+		c.Customer_Name LIKE '%' + @name + '%' AND
+		a.status = 'active'
+
+    GROUP BY 
+        c.Customer_Name, a.Account_Type, a.Balance;
+END
+
+EXEC BalancePerCustomer 'SHELLY JUWITA';
+EXEC BalancePerCustomer 'Susi Rahmawati';
+EXEC BalancePerCustomer 'BOBI RINALDO';
+
+
+drop procedure BalancePerCustomer
+
+
